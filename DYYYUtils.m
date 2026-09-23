@@ -1,4 +1,5 @@
 #import "DYYYUtils.h"
+#import "DYYYAwemeXColors.h"
 #import <MobileCoreServices/UTCoreTypes.h>
 #import <UIKit/UIKit.h>
 #import <math.h>
@@ -56,7 +57,7 @@ static BOOL DYYYColorKeyIsDynamic(NSString *normalizedKey) {
 
 @implementation DYYYUtils
 
-static const void *kCurrentIPRequestCityCodeKey = &kCurrentIPRequestCityCodeKey;
+static const void *kCurrentIPRequestTokenKey = &kCurrentIPRequestTokenKey;
 
 static NSString *DYYYJSONStringFromObject(id object) {
     if (!object) {
@@ -76,7 +77,8 @@ static NSString *DYYYJSONStringFromObject(id object) {
 }
 
 static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLocation, NSString *colorHexString) {
-    if (!label) {
+    // A request may finish after the user disabled publication/IP display.
+    if (!label || ![[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYEnableArea"]) {
         return;
     }
 
@@ -106,18 +108,19 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
         label.text = newText;
     }
 
-    [DYYYUtils applyColorSettingsToLabel:label colorHexString:colorHexString];
+    [DYYYAwemeXColors applyTimestampColorToLabel:label];
 }
 
 + (void)processAndApplyIPLocationToLabel:(UILabel *)label forModel:(AWEAwemeModel *)model withLabelColor:(NSString *)colorHexString {
     NSString *originalText = label.text ?: @"";
     NSString *cityCode = model.cityCode;
 
+    // Invalidate previous requests even for an empty cityCode or the same city.
+    NSObject *requestToken = [NSObject new];
+    objc_setAssociatedObject(label, kCurrentIPRequestTokenKey, requestToken, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (cityCode.length == 0) {
         return;
     }
-
-    objc_setAssociatedObject(label, kCurrentIPRequestCityCodeKey, cityCode, OBJC_ASSOCIATION_COPY_NONATOMIC);
 
     NSString *cityName = [CityManager.sharedInstance getCityNameWithCode:cityCode];
     NSString *provinceName = [CityManager.sharedInstance getProvinceNameWithCode:cityCode];
@@ -177,8 +180,8 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
             }
 
             dispatch_async(dispatch_get_main_queue(), ^{
-              NSString *currentRequestCode = objc_getAssociatedObject(label, kCurrentIPRequestCityCodeKey);
-              if (![currentRequestCode isEqualToString:cityCode]) {
+              id currentRequestToken = objc_getAssociatedObject(label, kCurrentIPRequestTokenKey);
+              if (currentRequestToken != requestToken) {
                   return;
               }
 
@@ -237,8 +240,8 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
                                     }
 
                                     dispatch_async(dispatch_get_main_queue(), ^{
-                                      NSString *currentRequestCode = objc_getAssociatedObject(label, kCurrentIPRequestCityCodeKey);
-                                      if (![currentRequestCode isEqualToString:cityCode]) {
+                                      id currentRequestToken = objc_getAssociatedObject(label, kCurrentIPRequestTokenKey);
+                                      if (currentRequestToken != requestToken) {
                                           return;
                                       }
 
@@ -265,7 +268,7 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
                 label.text = [NSString stringWithFormat:@"%@  IP属地：%@", originalText, cityName];
             }
         }
-        [DYYYUtils applyColorSettingsToLabel:label colorHexString:colorHexString];
+        // The getter applies color once after this synchronous text update.
     }
 }
 
@@ -751,6 +754,10 @@ static os_unfair_lock _staticColorCreationLock = OS_UNFAIR_LOCK_INIT;
     for (UIView *subview in view.subviews) {
         [self applyTextColorRecursively:color inView:subview shouldExcludeViewBlock:excludeBlock];
     }
+}
+
++ (void)invalidateColorSettingsCacheForLabel:(UILabel *)label {
+    if (label) objc_setAssociatedObject(label, &kLabelColorStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 + (void)applyColorSettingsToLabel:(UILabel *)label colorHexString:(NSString *)colorHexString {

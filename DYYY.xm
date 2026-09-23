@@ -42,6 +42,7 @@
 #import "DYYYSettingViewController.h"
 #import "DYYYToast.h"
 #import "DYYYUtils.h"
+#import "DYYYAwemeXColors.h"
 
 
 static CGFloat gStartY = 0.0;
@@ -1136,6 +1137,13 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
 %hook AWEDanmakuContentLabel
 - (void)setTextColor:(UIColor *)textColor {
     if (DYYYGetBool(@"DYYYEnableDanmuColor")) {
+        if (DYYYGetBool(@"DYYYDanmuAwemeXColor")) {
+            // Switching back later must not reuse the legacy attributed-color cache.
+            [DYYYUtils invalidateColorSettingsCacheForLabel:self];
+            // AwemeX's actual solid-color setter path, not DYYY's color schemes.
+            %orig([DYYYAwemeXColors randomDanmakuColor]);
+            return;
+        }
         NSString *danmuColor = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYDanmuColor"];
         if (DYYYGetBool(@"DYYYDanmuRainbowRotating")) {
             danmuColor = @"rainbow_rotating";
@@ -1148,7 +1156,7 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
 
 - (void)setStrokeWidth:(double)strokeWidth {
     if (DYYYGetBool(@"DYYYEnableDanmuColor")) {
-        %orig(FLT_MIN);
+        %orig(DYYYGetBool(@"DYYYDanmuAwemeXColor") ? 0.1 : FLT_MIN);
     } else {
         %orig(strokeWidth);
     }
@@ -1609,6 +1617,8 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
     if (DYYYGetBool(@"DYYYEnableArea")) {
         [DYYYUtils processAndApplyIPLocationToLabel:label forModel:self.model withLabelColor:labelColorHex];
     }
+    // Always update color, including missing/unchanged cityCode and mode-off cleanup.
+    [DYYYAwemeXColors applyTimestampColorToLabel:label];
     // 应用IP属地标签上移
     NSString *ipScaleValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYNicknameScale"];
     if (ipScaleValue.length > 0) {
@@ -4323,6 +4333,7 @@ static NSHashTable *processedParentViews = nil;
 
 - (void)layoutSubviews {
     %orig;
+    [DYYYAwemeXColors layoutTimestampLabel:self];
 
     NSString *askAIText = self.text;
     if (askAIText.length == 0 && self.attributedText.length > 0) {

@@ -141,6 +141,8 @@ NS_ASSUME_NONNULL_BEGIN
  *        - "HEX" 或 "#HEX": 返回一个单色方案。
  */
 + (void)applyColorSettingsToLabel:(UILabel *)label colorHexString:(NSString *)colorHexString;
+// Invalidate only this label when a dedicated renderer bypasses the legacy scheme.
++ (void)invalidateColorSettingsCacheForLabel:(UILabel *)label;
 + (void)applyStrokeToLabel:(UILabel *)label strokeColor:(UIColor *)strokeColor strokeWidth:(CGFloat)strokeWidth;
 + (void)applyShadowToLabel:(UILabel *)label shadow:(NSShadow *)shadow;
 
