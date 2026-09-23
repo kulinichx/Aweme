@@ -63,13 +63,12 @@ static char kDYYYDiscoverOriginalLayerOpacityKey;
 static char kDYYYAskAIOriginalHiddenKey;
 static NSInteger dyyyGlobalTransparencyMutationDepth = 0;
 
-static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
+static void DYYYSetDiscoverVisualNodeHidden(UIView *view, BOOL hidden) {
     if (!view) {
         return;
     }
 
     NSNumber *originalOpacity = objc_getAssociatedObject(view, &kDYYYDiscoverOriginalLayerOpacityKey);
-
     if (hidden) {
         if (!originalOpacity) {
             objc_setAssociatedObject(view,
@@ -77,9 +76,6 @@ static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
                                      @(view.layer.opacity),
                                      OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
-
-        // Suppress rendering only. Do not mutate hidden/alpha/userInteractionEnabled,
-        // because the real iPad search hit target may live on an ancestor view.
         view.layer.opacity = 0.0f;
     } else if (originalOpacity) {
         view.layer.opacity = originalOpacity.floatValue;
@@ -87,6 +83,44 @@ static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
                                  &kDYYYDiscoverOriginalLayerOpacityKey,
                                  nil,
                                  OBJC_ASSOCIATION_ASSIGN);
+    }
+}
+
+static BOOL DYYYDiscoverViewIsVisualNode(UIView *view) {
+    if ([view isKindOfClass:[UIImageView class]] || [view isKindOfClass:[UILabel class]]) {
+        return YES;
+    }
+
+    NSString *className = NSStringFromClass(view.class);
+    return [className rangeOfString:@"Image" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+           [className rangeOfString:@"Icon" options:NSCaseInsensitiveSearch].location != NSNotFound;
+}
+
+static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
+    if (!view) {
+        return;
+    }
+
+    // Never make the entrance container itself transparent. Some iPad builds use the
+    // container's presentation state when deciding whether its tap action is available.
+    // Hide only visual descendants so the original responder / gesture chain stays intact.
+    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithArray:view.subviews];
+    while (stack.count > 0) {
+        UIView *node = stack.lastObject;
+        [stack removeLastObject];
+
+        if (DYYYDiscoverViewIsVisualNode(node)) {
+            DYYYSetDiscoverVisualNodeHidden(node, hidden);
+        }
+
+        if (node.subviews.count > 0) {
+            [stack addObjectsFromArray:node.subviews];
+        }
+    }
+
+    // Fallback candidates can themselves be a leaf image/label view.
+    if (DYYYDiscoverViewIsVisualNode(view)) {
+        DYYYSetDiscoverVisualNodeHidden(view, hidden);
     }
 }
 
@@ -167,7 +201,7 @@ static BOOL DYYYStringLooksLikeAskAI(NSString *value) {
            [normalized isEqualToString:@"ai，按钮"];
 }
 
-static BOOL DYYYViewTreeLooksLikeAskAI(UIView *view) {
+static BOOL DYYYViewLooksLikeAskAI(UIView *view) {
     if (!view) {
         return NO;
     }
@@ -185,18 +219,46 @@ static BOOL DYYYViewTreeLooksLikeAskAI(UIView *view) {
 
     if ([view isKindOfClass:[UIButton class]]) {
         UIButton *button = (UIButton *)view;
-        if (DYYYStringLooksLikeAskAI([button titleForState:UIControlStateNormal])) {
-            return YES;
-        }
-    }
-
-    for (UIView *subview in view.subviews) {
-        if (DYYYViewTreeLooksLikeAskAI(subview)) {
-            return YES;
-        }
+        return DYYYStringLooksLikeAskAI([button titleForState:UIControlStateNormal]);
     }
 
     return NO;
+}
+
+static UIView *DYYYAskAIActionContainerForMatchedView(UIView *view, UIView *rootView) {
+    if (!view) {
+        return nil;
+    }
+
+    Class feedButtonClass = NSClassFromString(@"AWEFeedVideoButton");
+    Class stackClass = NSClassFromString(@"AWEElementStackView");
+    UIView *cursor = view;
+    UIView *bestCandidate = view;
+
+    for (NSInteger depth = 0; cursor && cursor != rootView && depth < 10; depth++) {
+        if (feedButtonClass && [cursor isKindOfClass:feedButtonClass]) {
+            return cursor;
+        }
+
+        UIView *parent = cursor.superview;
+        if (!parent || parent == rootView) {
+            break;
+        }
+
+        if (stackClass && [parent isKindOfClass:stackClass]) {
+            return cursor;
+        }
+
+        CGSize size = parent.bounds.size;
+        if (size.width > 0.0 && size.height > 0.0 && size.width <= 220.0 && size.height <= 260.0) {
+            bestCandidate = parent;
+            cursor = parent;
+            continue;
+        }
+        break;
+    }
+
+    return bestCandidate;
 }
 
 static void DYYYApplyRightSideAskAIHidden(UIView *rootView) {
@@ -205,31 +267,41 @@ static void DYYYApplyRightSideAskAIHidden(UIView *rootView) {
     }
 
     BOOL shouldHide = DYYYGetBool(@"DYYYHideAskAI");
+    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:rootView];
 
-    // AWEElementStackView's direct children are individual right-side action items.
-    // Preserve each item's pre-existing hidden state so OFF can restore it safely.
-    for (UIView *itemView in rootView.subviews) {
-        NSNumber *originalHidden = objc_getAssociatedObject(itemView, &kDYYYAskAIOriginalHiddenKey);
+    while (stack.count > 0) {
+        UIView *view = stack.lastObject;
+        [stack removeLastObject];
 
-        if (!shouldHide) {
-            if (originalHidden) {
-                itemView.hidden = originalHidden.boolValue;
-                objc_setAssociatedObject(itemView,
+        NSNumber *originalHidden = objc_getAssociatedObject(view, &kDYYYAskAIOriginalHiddenKey);
+        if (originalHidden) {
+            if (shouldHide) {
+                view.hidden = YES;
+            } else {
+                view.hidden = originalHidden.boolValue;
+                objc_setAssociatedObject(view,
                                          &kDYYYAskAIOriginalHiddenKey,
                                          nil,
                                          OBJC_ASSOCIATION_ASSIGN);
             }
-            continue;
         }
 
-        if (originalHidden || DYYYViewTreeLooksLikeAskAI(itemView)) {
-            if (!originalHidden) {
-                objc_setAssociatedObject(itemView,
-                                         &kDYYYAskAIOriginalHiddenKey,
-                                         @(itemView.hidden),
-                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (shouldHide && DYYYViewLooksLikeAskAI(view)) {
+            UIView *container = DYYYAskAIActionContainerForMatchedView(view, rootView);
+            if (container) {
+                NSNumber *containerOriginalHidden = objc_getAssociatedObject(container, &kDYYYAskAIOriginalHiddenKey);
+                if (!containerOriginalHidden) {
+                    objc_setAssociatedObject(container,
+                                             &kDYYYAskAIOriginalHiddenKey,
+                                             @(container.hidden),
+                                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
+                container.hidden = YES;
             }
-            itemView.hidden = YES;
+        }
+
+        if (view.subviews.count > 0) {
+            [stack addObjectsFromArray:view.subviews];
         }
     }
 }
@@ -4354,6 +4426,13 @@ static NSHashTable *processedParentViews = nil;
 // 隐藏右上搜索，但保留点击
 %hook AWEHPDiscoverFeedEntranceView
 
+- (void)configImage:(UIImageView *)imageView Label:(UILabel *)label position:(NSInteger)pos {
+    %orig(imageView, label, pos);
+    BOOL shouldHide = DYYYGetBool(@"DYYYHideDiscover");
+    DYYYSetDiscoverVisualNodeHidden(imageView, shouldHide);
+    DYYYSetDiscoverVisualNodeHidden(label, shouldHide);
+}
+
 - (void)layoutSubviews {
     %orig;
     DYYYSetDiscoverEntranceVisuallyHidden(self, DYYYGetBool(@"DYYYHideDiscover"));
@@ -6575,6 +6654,10 @@ static void *DYYYTabBarHeightContext = &DYYYTabBarHeightContext;
 
 - (void)viewDidLayoutSubviews {
     %orig;
+
+    // Ask AI is not consistently hosted by the right AWEElementStackView on iPad.
+    // Scan the interaction controller's complete view tree after layout instead.
+    DYYYApplyRightSideAskAIHidden(self.view);
 
     if (isFloatSpeedButtonEnabled) {
         BOOL hasRightStack = NO;
