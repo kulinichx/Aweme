@@ -60,6 +60,7 @@ static NSString *const kDYYYGlobalTransparencyDidChangeNotification = @"DYYYGlob
 static NSString *const kDYYYTabBarHeightKey = @"DYYYTabBarHeight";
 static char kDYYYGlobalTransparencyBaseAlphaKey;
 static char kDYYYDiscoverOriginalLayerOpacityKey;
+static char kDYYYAskAIOriginalHiddenKey;
 static NSInteger dyyyGlobalTransparencyMutationDepth = 0;
 
 static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
@@ -77,10 +78,8 @@ static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
                                      OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
 
-        // Keep UIView visible to UIKit hit-testing; only suppress rendering.
-        view.hidden = NO;
-        view.alpha = 1.0;
-        view.userInteractionEnabled = YES;
+        // Suppress rendering only. Do not mutate hidden/alpha/userInteractionEnabled,
+        // because the real iPad search hit target may live on an ancestor view.
         view.layer.opacity = 0.0f;
     } else if (originalOpacity) {
         view.layer.opacity = originalOpacity.floatValue;
@@ -148,6 +147,89 @@ static void DYYYApplyIPadDiscoverEntranceFallback(UIView *rootView) {
 
         if ((isRightSide && isReasonableWidth && isReasonableHeight) || wasModified) {
             DYYYSetDiscoverEntranceVisuallyHidden(view, shouldHide);
+        }
+    }
+}
+
+static BOOL DYYYStringLooksLikeAskAI(NSString *value) {
+    if (![value isKindOfClass:[NSString class]] || value.length == 0) {
+        return NO;
+    }
+
+    NSString *normalized = [[value lowercaseString] stringByReplacingOccurrencesOfString:@" " withString:@""];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"_" withString:@""];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"-" withString:@""];
+
+    return [normalized containsString:@"问问ai"] ||
+           [normalized containsString:@"askai"] ||
+           [normalized isEqualToString:@"ai"] ||
+           [normalized isEqualToString:@"ai按钮"] ||
+           [normalized isEqualToString:@"ai，按钮"];
+}
+
+static BOOL DYYYViewTreeLooksLikeAskAI(UIView *view) {
+    if (!view) {
+        return NO;
+    }
+
+    if (DYYYStringLooksLikeAskAI(NSStringFromClass(view.class)) ||
+        DYYYStringLooksLikeAskAI(view.accessibilityLabel) ||
+        DYYYStringLooksLikeAskAI(view.accessibilityIdentifier)) {
+        return YES;
+    }
+
+    if ([view isKindOfClass:[UILabel class]] &&
+        DYYYStringLooksLikeAskAI(((UILabel *)view).text)) {
+        return YES;
+    }
+
+    if ([view isKindOfClass:[UIButton class]]) {
+        UIButton *button = (UIButton *)view;
+        if (DYYYStringLooksLikeAskAI([button titleForState:UIControlStateNormal])) {
+            return YES;
+        }
+    }
+
+    for (UIView *subview in view.subviews) {
+        if (DYYYViewTreeLooksLikeAskAI(subview)) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+static void DYYYApplyRightSideAskAIHidden(UIView *rootView) {
+    if (!rootView) {
+        return;
+    }
+
+    BOOL shouldHide = DYYYGetBool(@"DYYYHideAskAI");
+
+    // AWEElementStackView's direct children are individual right-side action items.
+    // Preserve each item's pre-existing hidden state so OFF can restore it safely.
+    for (UIView *itemView in rootView.subviews) {
+        NSNumber *originalHidden = objc_getAssociatedObject(itemView, &kDYYYAskAIOriginalHiddenKey);
+
+        if (!shouldHide) {
+            if (originalHidden) {
+                itemView.hidden = originalHidden.boolValue;
+                objc_setAssociatedObject(itemView,
+                                         &kDYYYAskAIOriginalHiddenKey,
+                                         nil,
+                                         OBJC_ASSOCIATION_ASSIGN);
+            }
+            continue;
+        }
+
+        if (originalHidden || DYYYViewTreeLooksLikeAskAI(itemView)) {
+            if (!originalHidden) {
+                objc_setAssociatedObject(itemView,
+                                         &kDYYYAskAIOriginalHiddenKey,
+                                         @(itemView.hidden),
+                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            itemView.hidden = YES;
         }
     }
 }
@@ -7345,6 +7427,8 @@ static Class TagViewClass = nil;
                     self.transform = CGAffineTransformIdentity;
                 }
             }
+
+            DYYYApplyRightSideAskAIHidden(self);
         }
         // 左侧元素的处理逻辑
         else if ([self.accessibilityLabel isEqualToString:@"left"] || [DYYYUtils containsSubviewOfClass:NSClassFromString(@"AWEFeedAnchorContainerView") inContainer:self]) {
