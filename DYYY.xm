@@ -59,7 +59,98 @@ static NSString *const kDYYYGlobalTransparencyKey = @"DYYYGlobalTransparency";
 static NSString *const kDYYYGlobalTransparencyDidChangeNotification = @"DYYYGlobalTransparencyDidChangeNotification";
 static NSString *const kDYYYTabBarHeightKey = @"DYYYTabBarHeight";
 static char kDYYYGlobalTransparencyBaseAlphaKey;
+static char kDYYYDiscoverOriginalLayerOpacityKey;
 static NSInteger dyyyGlobalTransparencyMutationDepth = 0;
+
+static void DYYYSetDiscoverEntranceVisuallyHidden(UIView *view, BOOL hidden) {
+    if (!view) {
+        return;
+    }
+
+    NSNumber *originalOpacity = objc_getAssociatedObject(view, &kDYYYDiscoverOriginalLayerOpacityKey);
+
+    if (hidden) {
+        if (!originalOpacity) {
+            objc_setAssociatedObject(view,
+                                     &kDYYYDiscoverOriginalLayerOpacityKey,
+                                     @(view.layer.opacity),
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+
+        // Keep UIView visible to UIKit hit-testing; only suppress rendering.
+        view.hidden = NO;
+        view.alpha = 1.0;
+        view.userInteractionEnabled = YES;
+        view.layer.opacity = 0.0f;
+    } else if (originalOpacity) {
+        view.layer.opacity = originalOpacity.floatValue;
+        objc_setAssociatedObject(view,
+                                 &kDYYYDiscoverOriginalLayerOpacityKey,
+                                 nil,
+                                 OBJC_ASSOCIATION_ASSIGN);
+    }
+}
+
+static BOOL DYYYStringLooksLikeDiscoverSearch(NSString *value) {
+    if (![value isKindOfClass:[NSString class]] || value.length == 0) {
+        return NO;
+    }
+
+    return [value rangeOfString:@"search" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+           [value rangeOfString:@"discover" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+           [value containsString:@"搜索"];
+}
+
+static void DYYYApplyIPadDiscoverEntranceFallback(UIView *rootView) {
+    if (!rootView || UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPad) {
+        return;
+    }
+
+    BOOL shouldHide = DYYYGetBool(@"DYYYHideDiscover");
+    CGFloat rootWidth = CGRectGetWidth(rootView.bounds);
+    CGFloat rootHeight = CGRectGetHeight(rootView.bounds);
+
+    if (rootWidth <= 0.0 || rootHeight <= 0.0) {
+        return;
+    }
+
+    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithArray:rootView.subviews];
+
+    while (stack.count > 0) {
+        UIView *view = stack.lastObject;
+        [stack removeLastObject];
+
+        if (view.subviews.count > 0) {
+            [stack addObjectsFromArray:view.subviews];
+        }
+
+        BOOL wasModified =
+            objc_getAssociatedObject(view, &kDYYYDiscoverOriginalLayerOpacityKey) != nil;
+
+        NSString *className = NSStringFromClass(view.class);
+        BOOL looksLikeSearch =
+            DYYYStringLooksLikeDiscoverSearch(className) ||
+            DYYYStringLooksLikeDiscoverSearch(view.accessibilityLabel) ||
+            DYYYStringLooksLikeDiscoverSearch(view.accessibilityIdentifier);
+
+        if (!looksLikeSearch && !wasModified) {
+            continue;
+        }
+
+        CGRect rect = [view convertRect:view.bounds toView:rootView];
+        if (CGRectIsNull(rect) || CGRectIsInfinite(rect) || CGRectIsEmpty(rect)) {
+            continue;
+        }
+
+        BOOL isRightSide = CGRectGetMidX(rect) > rootWidth * 0.58;
+        BOOL isReasonableWidth = CGRectGetWidth(rect) <= rootWidth * 0.42;
+        BOOL isReasonableHeight = CGRectGetHeight(rect) <= MAX(rootHeight * 1.5, 120.0);
+
+        if ((isRightSide && isReasonableWidth && isReasonableHeight) || wasModified) {
+            DYYYSetDiscoverEntranceVisuallyHidden(view, shouldHide);
+        }
+    }
+}
 
 static void updateGlobalTransparencyCache() {
     NSString *transparentValue = DYYYGetString(kDYYYGlobalTransparencyKey);
@@ -705,7 +796,14 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
 - (void)didMoveToSuperview {
     %orig;
     applyTopBarTransparency(self);
+    DYYYApplyIPadDiscoverEntranceFallback(self);
 }
+
+- (void)layoutSubviews {
+    %orig;
+    DYYYApplyIPadDiscoverEntranceFallback(self);
+}
+
 - (void)setAlpha:(CGFloat)alpha {
     NSString *transparentValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYTopBarTransparent"];
     if (transparentValue && transparentValue.length > 0) {
@@ -4171,18 +4269,17 @@ static NSHashTable *processedParentViews = nil;
 }
 %end
 
-// 隐藏右上搜索，但可点击
+// 隐藏右上搜索，但保留点击
 %hook AWEHPDiscoverFeedEntranceView
 
 - (void)layoutSubviews {
     %orig;
+    DYYYSetDiscoverEntranceVisuallyHidden(self, DYYYGetBool(@"DYYYHideDiscover"));
+}
 
-    if (DYYYGetBool(@"DYYYHideDiscover")) {
-        UIView *firstSubview = self.subviews.firstObject;
-        if ([firstSubview isKindOfClass:[UIImageView class]]) {
-            ((UIImageView *)firstSubview).image = nil;
-        }
-    }
+- (void)didMoveToWindow {
+    %orig;
+    DYYYSetDiscoverEntranceVisuallyHidden(self, DYYYGetBool(@"DYYYHideDiscover"));
 }
 
 %end
