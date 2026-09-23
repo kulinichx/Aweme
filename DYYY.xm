@@ -61,6 +61,7 @@ static NSString *const kDYYYTabBarHeightKey = @"DYYYTabBarHeight";
 static char kDYYYGlobalTransparencyBaseAlphaKey;
 static char kDYYYDiscoverOriginalLayerOpacityKey;
 static char kDYYYAskAIOriginalHiddenKey;
+static NSHashTable<UIView *> *gDYYYAskAITrackedContainers = nil;
 static NSInteger dyyyGlobalTransparencyMutationDepth = 0;
 
 static void DYYYSetDiscoverVisualNodeHidden(UIView *view, BOOL hidden) {
@@ -223,6 +224,132 @@ static BOOL DYYYViewLooksLikeAskAI(UIView *view) {
     }
 
     return NO;
+}
+
+static BOOL DYYYStringIsExactAskAI(NSString *value) {
+    if (![value isKindOfClass:[NSString class]] || value.length == 0) {
+        return NO;
+    }
+
+    NSString *normalized = [[value lowercaseString] stringByReplacingOccurrencesOfString:@" " withString:@""];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"_" withString:@""];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"-" withString:@""];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"，" withString:@""];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"," withString:@""];
+
+    return [normalized isEqualToString:@"问问ai"] ||
+           [normalized isEqualToString:@"askai"];
+}
+
+static NSHashTable<UIView *> *DYYYAskAITrackedContainers(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+      gDYYYAskAITrackedContainers = [NSHashTable weakObjectsHashTable];
+    });
+    return gDYYYAskAITrackedContainers;
+}
+
+static UIView *DYYYCompactAskAIContainerForView(UIView *view) {
+    if (!view) {
+        return nil;
+    }
+
+    UIView *cursor = view;
+    UIView *candidate = view.superview ?: view;
+    Class elementStackClass = NSClassFromString(@"AWEElementStackView");
+
+    for (NSInteger depth = 0; cursor.superview && depth < 8; depth++) {
+        UIView *parent = cursor.superview;
+        if ([parent isKindOfClass:[UIWindow class]]) {
+            break;
+        }
+
+        if ([parent isKindOfClass:[UIStackView class]] ||
+            (elementStackClass && [parent isKindOfClass:elementStackClass])) {
+            return cursor;
+        }
+
+        CGSize size = parent.bounds.size;
+        BOOL compactWidth = size.width > 0.0 && size.width <= 180.0;
+        BOOL compactHeight = size.height > 0.0 && size.height <= 180.0;
+        if (compactWidth && compactHeight) {
+            candidate = parent;
+            cursor = parent;
+            continue;
+        }
+        break;
+    }
+
+    return candidate;
+}
+
+static void DYYYTrackAskAIExactTextView(UIView *view, NSString *text) {
+    if (!view || !DYYYStringIsExactAskAI(text)) {
+        return;
+    }
+
+    UIWindow *window = view.window;
+    if (!window || window.bounds.size.width <= 0.0) {
+        return;
+    }
+
+    CGRect rect = [view convertRect:view.bounds toView:window];
+    if (CGRectIsNull(rect) || CGRectIsInfinite(rect) || CGRectIsEmpty(rect)) {
+        return;
+    }
+
+    // The target from the iPad feed is a compact action on the right edge.
+    // This avoids matching the DYYY settings row named "隐藏问问AI".
+    if (CGRectGetMidX(rect) < CGRectGetWidth(window.bounds) * 0.58) {
+        return;
+    }
+
+    UIView *container = DYYYCompactAskAIContainerForView(view);
+    if (!container) {
+        return;
+    }
+
+    NSHashTable<UIView *> *tracked = DYYYAskAITrackedContainers();
+    BOOL isNewMatch = ![tracked containsObject:container];
+    [tracked addObject:container];
+
+    NSNumber *originalHidden = objc_getAssociatedObject(container, &kDYYYAskAIOriginalHiddenKey);
+    if (!originalHidden) {
+        originalHidden = @(container.hidden);
+        objc_setAssociatedObject(container,
+                                 &kDYYYAskAIOriginalHiddenKey,
+                                 originalHidden,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    container.hidden = DYYYGetBool(@"DYYYHideAskAI") ? YES : originalHidden.boolValue;
+
+    if (isNewMatch) {
+        NSLog(@"[DYYY][AskAI] exact text match: label=%@ container=%@ frame=%@",
+              NSStringFromClass(view.class),
+              NSStringFromClass(container.class),
+              NSStringFromCGRect(rect));
+    }
+}
+
+static void DYYYRefreshTrackedAskAIContainers(void) {
+    BOOL shouldHide = DYYYGetBool(@"DYYYHideAskAI");
+    NSArray<UIView *> *containers = [DYYYAskAITrackedContainers() allObjects];
+
+    for (UIView *container in containers) {
+        NSNumber *originalHidden = objc_getAssociatedObject(container, &kDYYYAskAIOriginalHiddenKey);
+        if (!originalHidden) {
+            continue;
+        }
+
+        container.hidden = shouldHide ? YES : originalHidden.boolValue;
+        if (!shouldHide) {
+            objc_setAssociatedObject(container,
+                                     &kDYYYAskAIOriginalHiddenKey,
+                                     nil,
+                                     OBJC_ASSOCIATION_ASSIGN);
+        }
+    }
 }
 
 static UIView *DYYYAskAIActionContainerForMatchedView(UIView *view, UIView *rootView) {
@@ -3591,6 +3718,9 @@ static NSArray *DYYYIMMenuItemsByAddingDownloadAction(NSArray *menuItems, id cel
 - (void)layoutSubviews {
     %orig;
 
+    NSString *askAITitle = [self titleForState:UIControlStateNormal];
+    DYYYTrackAskAIExactTextView(self, askAITitle.length > 0 ? askAITitle : self.accessibilityLabel);
+
     NSString *accessibilityLabel = self.accessibilityLabel;
 
     if ([accessibilityLabel isEqualToString:@"拍照搜同款"] || [accessibilityLabel isEqualToString:@"扫一扫"]) {
@@ -4193,6 +4323,12 @@ static NSHashTable *processedParentViews = nil;
 
 - (void)layoutSubviews {
     %orig;
+
+    NSString *askAIText = self.text;
+    if (askAIText.length == 0 && self.attributedText.length > 0) {
+        askAIText = self.attributedText.string;
+    }
+    DYYYTrackAskAIExactTextView(self, askAIText.length > 0 ? askAIText : self.accessibilityLabel);
 
     BOOL hideRightLabel = DYYYGetBool(@"DYYYHideRightLabel");
     if (!hideRightLabel)
@@ -6655,6 +6791,8 @@ static void *DYYYTabBarHeightContext = &DYYYTabBarHeightContext;
 - (void)viewDidLayoutSubviews {
     %orig;
 
+    DYYYRefreshTrackedAskAIContainers();
+
     // Ask AI is not consistently hosted by the right AWEElementStackView on iPad.
     // Scan the interaction controller's complete view tree after layout instead.
     DYYYApplyRightSideAskAIHidden(self.view);
@@ -7440,6 +7578,8 @@ static Class TagViewClass = nil;
 
 - (void)layoutSubviews {
     %orig;
+
+    DYYYRefreshTrackedAskAIContainers();
 
     UIViewController *viewController = [DYYYUtils firstAvailableViewControllerFromView:self];
 
