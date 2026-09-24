@@ -285,8 +285,8 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 【外观设置】分类
       NSMutableArray<AWESettingItemModel *> *appearanceItems = [NSMutableArray array];
       NSArray *appearanceSettings = @[
-          @{@"identifier" : @"DYYYEnableDanmuColor",
-            @"title" : @"启用弹幕改色",
+          @{@"identifier" : @"DYYYDanmuAwemeXColor",
+            @"title" : @"图层弹幕亮色",
             @"detail" : @"",
             @"cellType" : @6,
             @"imageName" : @"ic_dansquare_outlined_20"},
@@ -309,14 +309,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       NSMutableArray<AWESettingItemModel *> *videoItems = [NSMutableArray array];
       NSArray *videoSettings = @[
           @{
-              @"identifier" : @"DYYYVideoBGColor",
-              @"title" : @"视频背景颜色",
-              @"subTitle" : @"可以自定义部分横屏视频的背景颜色",
-              @"detail" : @"",
-              @"cellType" : @20,
-              @"imageName" : @"ic_tv_outlined_20"
-          },
-          @{
               @"identifier" : @"DYYYShowScheduleDisplay",
               @"title" : @"显示进度时长",
               @"subTitle" : @"强制显示所有视频的进度条和时长",
@@ -327,11 +319,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
           @{@"identifier" : @"DYYYScheduleStyle",
             @"title" : @"进度时长样式",
             @"detail" : @"",
-            @"cellType" : @26,
-            @"imageName" : @"ic_playertime_outlined_20"},
-          @{@"identifier" : @"DYYYProgressLabelColor",
-            @"title" : @"进度标签颜色",
-            @"detail" : @"十六进制",
             @"cellType" : @26,
             @"imageName" : @"ic_playertime_outlined_20"},
           @{@"identifier" : @"DYYYTimelineVerticalPosition",
@@ -397,14 +384,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"",
             @"cellType" : @26,
             @"imageName" : @"ic_tag_outlined_20"},
-          @{
-              @"identifier" : @"DYYYEnableRandomGradient",
-              @"title" : @"属地随机渐变",
-              @"subTitle" : @"",
-              @"detail" : @"",
-              @"cellType" : @37,
-              @"imageName" : @"ic_location_outlined_20"
-          }
+          @{@"identifier" : @"DYYYAwemeXTimestampGradient",
+            @"title" : @"图层时间/属地渐变",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_location_outlined_20"}
       ];
 
       for (NSDictionary *dict in videoSettings) {

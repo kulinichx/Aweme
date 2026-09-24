@@ -54,9 +54,8 @@
           // ===== 依赖关系配置 =====
           @"dependencies" : @{
               // 普通依赖：当源设置开启时，目标设置项可用
-              @"DYYYEnableDanmuColor" : @[ @"DYYYDanmuRainbowRotating" ],
-              @"DYYYEnableArea" : @[ @"DYYYGeonamesUsername", @"DYYYEnableRandomGradient" ],
-              @"DYYYShowScheduleDisplay" : @[ @"DYYYScheduleStyle", @"DYYYProgressLabelColor", @"DYYYTimelineVerticalPosition" ],
+              @"DYYYEnableArea" : @[ @"DYYYGeonamesUsername", @"DYYYAwemeXTimestampGradient" ],
+              @"DYYYShowScheduleDisplay" : @[ @"DYYYScheduleStyle", @"DYYYTimelineVerticalPosition" ],
               @"DYYYEnableNotificationTransparency" : @[ @"DYYYNotificationCornerRadius" ],
               @"DYYYEnableFloatSpeedButton" : @[ @"DYYYAutoRestoreSpeed", @"DYYYSpeedButtonShowX", @"DYYYSpeedButtonSize", @"DYYYSpeedSettings" ],
               @"DYYYEnableFloatClearButton" : @[
@@ -86,6 +85,8 @@
               @"DYYYSkipAllLive" : @[ @"DYYYSkipLive" ],
               @"DYYYHideEntry" : @[ @"DYYYRemoveEntry" ],
               @"DYYYRemoveEntry" : @[ @"DYYYHideEntry" ],
+              @"DYYYDanmuAwemeXColor" : @[ @"DYYYDanmuRainbowRotating" ],
+              @"DYYYDanmuRainbowRotating" : @[ @"DYYYDanmuAwemeXColor" ],
           },
 
           // ===== 互斥激活配置 =====

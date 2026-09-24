@@ -1136,35 +1136,31 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
 
 %hook AWEDanmakuContentLabel
 - (void)setTextColor:(UIColor *)textColor {
-    if (DYYYGetBool(@"DYYYEnableDanmuColor")) {
-        if (DYYYGetBool(@"DYYYDanmuAwemeXColor")) {
-            // Switching back later must not reuse the legacy attributed-color cache.
-            [DYYYUtils invalidateColorSettingsCacheForLabel:self];
-            // AwemeX's actual solid-color setter path, not DYYY's color schemes.
-            %orig([DYYYAwemeXColors randomDanmakuColor]);
-            return;
-        }
-        // Hex custom danmaku color was removed from settings; stale values are ignored (nil = white).
-        NSString *danmuColor = nil;
-        if (DYYYGetBool(@"DYYYDanmuRainbowRotating")) {
-            danmuColor = @"rainbow_rotating";
-        }
-        [DYYYUtils applyColorSettingsToLabel:self colorHexString:danmuColor];
+    // "图层弹幕亮色" is a standalone switch now (the separate "启用弹幕改色" master switch was removed).
+    if (DYYYGetBool(@"DYYYDanmuAwemeXColor")) {
+        // Switching back later must not reuse the legacy attributed-color cache.
+        [DYYYUtils invalidateColorSettingsCacheForLabel:self];
+        // AwemeX's actual solid-color setter path, not DYYY's color schemes.
+        %orig([DYYYAwemeXColors randomDanmakuColor]);
+    } else if (DYYYGetBool(@"DYYYDanmuRainbowRotating")) {
+        [DYYYUtils applyColorSettingsToLabel:self colorHexString:@"rainbow_rotating"];
     } else {
         %orig(textColor);
     }
 }
 
 - (void)setStrokeWidth:(double)strokeWidth {
-    if (DYYYGetBool(@"DYYYEnableDanmuColor")) {
-        %orig(DYYYGetBool(@"DYYYDanmuAwemeXColor") ? 0.1 : FLT_MIN);
+    if (DYYYGetBool(@"DYYYDanmuAwemeXColor")) {
+        %orig(0.1);
+    } else if (DYYYGetBool(@"DYYYDanmuRainbowRotating")) {
+        %orig(FLT_MIN);
     } else {
         %orig(strokeWidth);
     }
 }
 
 - (void)setStrokeColor:(UIColor *)strokeColor {
-    if (DYYYGetBool(@"DYYYEnableDanmuColor")) {
+    if (DYYYGetBool(@"DYYYDanmuAwemeXColor") || DYYYGetBool(@"DYYYDanmuRainbowRotating")) {
         %orig(nil);
     } else {
         %orig(strokeColor);
@@ -1456,21 +1452,24 @@ static inline UILabel *DYYYEnsureProgressLabel(AWEFeedProgressSlider *slider, BO
     return label;
 }
 
-static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString *colorHexString, BOOL forceApply) {
+// Hex input removed. AwemeX 2.6.2 bottom play-time default (0x159744): colorWithWhite:1.0 alpha:0.8.
+static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString *unusedColorHexString, BOOL forceApply) {
+    (void)unusedColorHexString;
     if (!label) {
         return;
     }
-
-    NSString *normalizedHex = colorHexString.length > 0 ? colorHexString : nil;
-    NSString *lastAppliedHex = objc_getAssociatedObject(label, &kDYYYProgressLabelColorKey);
-    BOOL colorChanged = (lastAppliedHex || normalizedHex) && ![lastAppliedHex isEqualToString:normalizedHex];
-
-    if (!forceApply && !colorChanged) {
+    if (!forceApply && objc_getAssociatedObject(label, &kDYYYProgressLabelColorKey)) {
         return;
     }
-
-    objc_setAssociatedObject(label, &kDYYYProgressLabelColorKey, normalizedHex ? [normalizedHex copy] : nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
-    [DYYYUtils applyColorSettingsToLabel:label colorHexString:normalizedHex];
+    objc_setAssociatedObject(label, &kDYYYProgressLabelColorKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [DYYYUtils invalidateColorSettingsCacheForLabel:label];
+    UIColor *color = [UIColor colorWithWhite:1.0 alpha:0.8];
+    NSString *text = label.attributedText.string.length > 0 ? label.attributedText.string : (label.text ?: @"");
+    label.textColor = color;
+    if (text.length > 0) {
+        NSDictionary *attrs = @{NSForegroundColorAttributeName : color, NSFontAttributeName : label.font ?: [UIFont systemFontOfSize:8]};
+        label.attributedText = [[NSAttributedString alloc] initWithString:text attributes:attrs];
+    }
 }
 
 %hook AWEFeedProgressSlider
@@ -1539,7 +1538,7 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
     BOOL showLeftRemainingTime = [scheduleStyle isEqualToString:@"进度条左侧剩余"];
     BOOL showLeftCompleteTime = [scheduleStyle isEqualToString:@"进度条左侧完整"];
 
-    NSString *labelColorHex = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYProgressLabelColor"];
+    NSString *labelColorHex = nil;
 
     CGFloat labelYPosition = sliderOriginalFrameInParent.origin.y + verticalOffset;
     CGFloat labelHeight = 15.0;
@@ -1611,11 +1610,8 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
 
 - (id)timestampLabel {
     UILabel *label = %orig;
-    // Hex timestamp label color was removed from settings; stale values are ignored (nil = white).
+    // Hex color and DYYY random gradient were removed; AwemeX gradient is applied below.
     NSString *labelColorHex = nil;
-    if (DYYYGetBool(@"DYYYEnableRandomGradient")) {
-        labelColorHex = @"random_gradient";
-    }
     if (DYYYGetBool(@"DYYYEnableArea")) {
         [DYYYUtils processAndApplyIPLocationToLabel:label forModel:self.model withLabelColor:labelColorHex];
     }
@@ -1673,7 +1669,7 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
         UILabel *leftLabel = DYYYProgressLabel(progressSlider, YES);
         UILabel *rightLabel = DYYYProgressLabel(progressSlider, NO);
 
-        NSString *labelColorHex = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYProgressLabelColor"];
+        NSString *labelColorHex = nil;
 
         NSString *scheduleStyle = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYScheduleStyle"];
         BOOL showRemainingTime = [scheduleStyle isEqualToString:@"进度条右侧剩余"];
@@ -5305,25 +5301,6 @@ static NSHashTable *processedParentViews = nil;
     return NO;
 }
 
-// 固定设置为 1，启用自定义背景色
-- (NSUInteger)awe_playerBackgroundViewShowType {
-    if ([[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYVideoBGColor"]) {
-        return 1;
-    }
-    return %orig;
-}
-
-- (UIColor *)awe_smartBackgroundColor {
-    NSString *colorHex = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYVideoBGColor"];
-    if (colorHex && colorHex.length > 0) {
-        CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
-        UIColor *customColor = [DYYYUtils colorFromSchemeHexString:colorHex targetWidth:screenWidth];
-        if (customColor)
-            return customColor;
-    }
-    return %orig;
-}
-
 %end
 
 %hook AWEFeedCommentConfigModel
@@ -5343,25 +5320,6 @@ static NSHashTable *processedParentViews = nil;
     }
     %orig(status);
 }
-%end
-
-%hook MTKView
-
-- (void)layoutSubviews {
-    %orig;
-    UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
-    Class playVCClass = NSClassFromString(@"AWEPlayVideoViewController");
-    if (vc && playVCClass && [vc isKindOfClass:playVCClass]) {
-        NSString *colorHex = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYVideoBGColor"];
-        if (colorHex && colorHex.length > 0) {
-            CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
-            UIColor *customColor = [DYYYUtils colorFromSchemeHexString:colorHex targetWidth:screenWidth];
-            if (customColor)
-                self.backgroundColor = customColor;
-        }
-    }
-}
-
 %end
 
 // 拦截开屏广告
