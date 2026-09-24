@@ -81,7 +81,7 @@ static void DYYYAwemeXRemoveGradient(DYYYAwemeXTimestampState *state) {
     state.colors = nil;
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (![defaults boolForKey:@"DYYYEnableArea"]) return;
-    NSString *scheme = [defaults objectForKey:@"DYYYLabelColor"];
+    NSString *scheme = nil; // DYYYLabelColor hex input removed; nil = white.
     if ([defaults boolForKey:@"DYYYEnableRandomGradient"]) scheme = @"random_gradient";
     [DYYYUtils applyColorSettingsToLabel:label colorHexString:scheme];
 }

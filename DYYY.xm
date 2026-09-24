@@ -1144,7 +1144,8 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
             %orig([DYYYAwemeXColors randomDanmakuColor]);
             return;
         }
-        NSString *danmuColor = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYDanmuColor"];
+        // Hex custom danmaku color was removed from settings; stale values are ignored (nil = white).
+        NSString *danmuColor = nil;
         if (DYYYGetBool(@"DYYYDanmuRainbowRotating")) {
             danmuColor = @"rainbow_rotating";
         }
@@ -1610,7 +1611,8 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
 
 - (id)timestampLabel {
     UILabel *label = %orig;
-    NSString *labelColorHex = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYLabelColor"];
+    // Hex timestamp label color was removed from settings; stale values are ignored (nil = white).
+    NSString *labelColorHex = nil;
     if (DYYYGetBool(@"DYYYEnableRandomGradient")) {
         labelColorHex = @"random_gradient";
     }

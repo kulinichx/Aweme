@@ -54,8 +54,8 @@
           // ===== 依赖关系配置 =====
           @"dependencies" : @{
               // 普通依赖：当源设置开启时，目标设置项可用
-              @"DYYYEnableDanmuColor" : @[ @"DYYYDanmuColor" ],
-              @"DYYYEnableArea" : @[ @"DYYYGeonamesUsername", @"DYYYLabelColor", @"DYYYEnableRandomGradient" ],
+              @"DYYYEnableDanmuColor" : @[ @"DYYYDanmuRainbowRotating" ],
+              @"DYYYEnableArea" : @[ @"DYYYGeonamesUsername", @"DYYYEnableRandomGradient" ],
               @"DYYYShowScheduleDisplay" : @[ @"DYYYScheduleStyle", @"DYYYProgressLabelColor", @"DYYYTimelineVerticalPosition" ],
               @"DYYYEnableNotificationTransparency" : @[ @"DYYYNotificationCornerRadius" ],
               @"DYYYEnableFloatSpeedButton" : @[ @"DYYYAutoRestoreSpeed", @"DYYYSpeedButtonShowX", @"DYYYSpeedButtonSize", @"DYYYSpeedSettings" ],
@@ -90,7 +90,7 @@
 
           // ===== 互斥激活配置 =====
           // 当源设置项关闭时，目标设置项才能激活
-          @"mutualExclusions" : @{@"DYYYDanmuRainbowRotating" : @[ @"DYYYDanmuColor" ], @"DYYYEnableRandomGradient" : @[ @"DYYYLabelColor" ], @"DYYYSkipPhoto": @[@"DYYYSkipPhotoText"]},
+          @"mutualExclusions" : @{@"DYYYSkipPhoto": @[@"DYYYSkipPhotoText"]},
 
           // ===== 值依赖配置 =====
           // 基于字符串值的依赖关系

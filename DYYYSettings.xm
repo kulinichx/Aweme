@@ -291,17 +291,9 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"cellType" : @6,
             @"imageName" : @"ic_dansquare_outlined_20"},
           @{
-              @"identifier" : @"DYYYDanmuColor",
-              @"title" : @"自定弹幕颜色",
-              @"subTitle" : @"填入 random 使用随机颜色弹幕",
-              @"detail" : @"十六进制",
-              @"cellType" : @20,
-              @"imageName" : @"ic_dansquarenut_outlined_20"
-          },
-          @{
               @"identifier" : @"DYYYDanmuRainbowRotating",
               @"title" : @"旋转彩虹弹幕",
-              @"subTitle" : @"启用后将覆盖上面的自定义弹幕颜色",
+              @"subTitle" : @"",
               @"detail" : @"",
               @"cellType" : @37,
               @"imageName" : @"ic_dansquarenut_outlined_20"
@@ -405,15 +397,10 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"",
             @"cellType" : @26,
             @"imageName" : @"ic_tag_outlined_20"},
-          @{@"identifier" : @"DYYYLabelColor",
-            @"title" : @"属地标签颜色",
-            @"detail" : @"十六进制",
-            @"cellType" : @26,
-            @"imageName" : @"ic_location_outlined_20"},
           @{
               @"identifier" : @"DYYYEnableRandomGradient",
               @"title" : @"属地随机渐变",
-              @"subTitle" : @"启用后将覆盖上面的属地标签颜色",
+              @"subTitle" : @"",
               @"detail" : @"",
               @"cellType" : @37,
               @"imageName" : @"ic_location_outlined_20"
