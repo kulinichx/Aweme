@@ -316,21 +316,10 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
               @"cellType" : @37,
               @"imageName" : @"ic_playertime_outlined_20"
           },
-          @{@"identifier" : @"DYYYScheduleStyle",
-            @"title" : @"进度时长样式",
-            @"detail" : @"",
-            @"cellType" : @26,
-            @"imageName" : @"ic_playertime_outlined_20"},
           @{@"identifier" : @"DYYYTimelineVerticalPosition",
             @"title" : @"进度纵轴位置",
             @"detail" : @"-12.5",
             @"cellType" : @26,
-            @"imageName" : @"ic_playertime_outlined_20"},
-          @{@"identifier" : @"DYYYHideVideoProgress",
-            @"title" : @"隐藏视频进度",
-            @"subTitle" : @"隐藏视频进度条",
-            @"detail" : @"",
-            @"cellType" : @37,
             @"imageName" : @"ic_playertime_outlined_20"},
           @{
               @"identifier" : @"DYYYEnableAutoPlay",
@@ -422,23 +411,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
                 [DYYYOptionsSelectionView showWithPreferenceKey:@"DYYYLongPressSpeed"
                                                    optionsArray:speedOptions
                                                      headerText:@"选择右侧长按倍速"
-                                                 onPresentingVC:topView()
-                                               selectionChanged:^(NSString *selectedValue) {
-                                                 item.detail = selectedValue;
-                                                 [item refreshCell];
-                                               }];
-              };
-          }
-
-          else if ([item.identifier isEqualToString:@"DYYYScheduleStyle"]) {
-              NSString *savedStyle = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYScheduleStyle"];
-              item.detail = savedStyle ?: @"默认";
-              item.cellTappedBlock = ^{
-                NSArray *styleOptions = @[ @"进度条两侧上下", @"进度条左侧剩余", @"进度条左侧完整", @"进度条右侧剩余", @"进度条右侧完整" ];
-
-                [DYYYOptionsSelectionView showWithPreferenceKey:@"DYYYScheduleStyle"
-                                                   optionsArray:styleOptions
-                                                     headerText:@"选择进度时长样式"
                                                  onPresentingVC:topView()
                                                selectionChanged:^(NSString *selectedValue) {
                                                  item.detail = selectedValue;
@@ -575,14 +547,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"",
             @"cellType" : @26,
             @"imageName" : @"ic_tag_outlined_20"},
-          @{
-              @"identifier" : @"DYYYFilterTimeLimit",
-              @"subTitle" : @"开启后只会推荐最近 N 天内发布的视频\n谨慎开启，最低建议为 10 天",
-              @"title" : @"推荐视频时限",
-              @"detail" : @"",
-              @"cellType" : @20,
-              @"imageName" : @"ic_playertime_outlined_20"
-          },
           @{@"identifier" : @"DYYYFilterFeedHDR",
             @"title" : @"推荐过滤HDR",
             @"subTitle" : @"开启后推荐流会屏蔽 HDR 视频",
@@ -674,21 +638,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
                   [item refreshCell];
                 };
                 [keywordListView show];
-              };
-          } else if ([item.identifier isEqualToString:@"DYYYFilterTimeLimit"]) {
-              NSString *savedValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYFilterTimeLimit"];
-              item.detail = savedValue ?: @"";
-              item.cellTappedBlock = ^{
-                [DYYYSettingsHelper showTextInputAlert:@"过滤视频的发布时间"
-                                           defaultText:item.detail
-                                           placeholder:@"单位为天"
-                                             onConfirm:^(NSString *text) {
-                                               NSString *trimmedText = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                                               [DYYYSettingsHelper setUserDefaults:trimmedText forKey:@"DYYYFilterTimeLimit"];
-                                               item.detail = trimmedText ?: @"";
-                                               [item refreshCell];
-                                             }
-                                              onCancel:nil];
               };
           } else if ([item.identifier isEqualToString:@"DYYYFilterProp"]) {
               NSString *savedValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYFilterProp"];
@@ -2655,8 +2604,8 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       NSArray *interactionSettings = @[
           @{
               @"identifier" : @"DYYYDisableSettingsGesture",
-              @"title" : @"禁用双指长按入口",
-              @"subTitle" : @"开启后将禁用双指长按弹出的设置入口，开启或者关闭此选项都需要重启抖音以生效",
+              @"title" : @"禁用双指双击入口",
+              @"subTitle" : @"开启后将禁用双指双击弹出的设置入口，开启或者关闭此选项都需要重启抖音以生效",
               @"detail" : @"",
               @"cellType" : @37,
               @"imageName" : @"ic_gearsimplify_outlined_20"

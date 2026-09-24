@@ -1214,23 +1214,65 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
 
 %end
 
+static char kDYYYSettingsDoubleTapGestureKey;
+
+@interface UIWindow (DYYYSettingsGestureMethods)
+- (void)dyyy_installSettingsDoubleTapGesture;
+- (void)dyyy_handleSettingsDoubleTap:(UITapGestureRecognizer *)gesture;
+@end
+
 %group DYYYSettingsGesture
 
 %hook UIWindow
 - (instancetype)initWithFrame:(CGRect)frame {
     UIWindow *window = %orig(frame);
-    if (window) {
-        UILongPressGestureRecognizer *doubleFingerLongPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleFingerLongPressGesture:)];
-        doubleFingerLongPressGesture.numberOfTouchesRequired = 2;
-        [window addGestureRecognizer:doubleFingerLongPressGesture];
-    }
+    [window dyyy_installSettingsDoubleTapGesture];
+    return window;
+}
+
+- (instancetype)initWithWindowScene:(UIWindowScene *)windowScene {
+    UIWindow *window = %orig(windowScene);
+    [window dyyy_installSettingsDoubleTapGesture];
     return window;
 }
 
 %new
-- (void)handleDoubleFingerLongPressGesture:(UILongPressGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateBegan) {
+- (void)dyyy_installSettingsDoubleTapGesture {
+    // Scene-based and frame-based window initialization may both run.
+    if (objc_getAssociatedObject(self, &kDYYYSettingsDoubleTapGestureKey)) {
+        return;
+    }
+    UITapGestureRecognizer *gesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dyyy_handleSettingsDoubleTap:)];
+    gesture.numberOfTouchesRequired = 2;
+    gesture.numberOfTapsRequired = 2;
+    gesture.cancelsTouchesInView = NO;
+    gesture.delaysTouchesEnded = NO;
+    objc_setAssociatedObject(self, &kDYYYSettingsDoubleTapGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [self addGestureRecognizer:gesture];
+}
+
+%new
+- (void)dyyy_handleSettingsDoubleTap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateRecognized && self.windowLevel == UIWindowLevelNormal) {
         UIViewController *rootViewController = self.rootViewController;
+        // Present from this window's visible controller, not another iPad scene.
+        while (rootViewController) {
+            UIViewController *visibleController = rootViewController;
+            if ([visibleController isKindOfClass:UINavigationController.class]) {
+                visibleController = ((UINavigationController *)visibleController).visibleViewController;
+            }
+            if ([visibleController isKindOfClass:DYYYSettingViewController.class] ||
+                rootViewController.isBeingPresented || rootViewController.isBeingDismissed) {
+                return;
+            }
+            if (!rootViewController.presentedViewController) {
+                break;
+            }
+            rootViewController = rootViewController.presentedViewController;
+        }
+        if (!rootViewController.view.window) {
+            return;
+        }
         if (rootViewController) {
             UIViewController *settingVC = [[DYYYSettingViewController alloc] init];
 
@@ -1281,11 +1323,18 @@ static BOOL DYYYShouldHandleSpeedFeatures(void) {
 
 %new
 - (void)closeSettings:(UIButton *)button {
-    [button.superview.window.rootViewController dismissViewControllerAnimated:YES completion:nil];
+    UIResponder *responder = button;
+    while (responder && ![responder isKindOfClass:DYYYSettingViewController.class]) {
+        responder = responder.nextResponder;
+    }
+    if ([responder isKindOfClass:DYYYSettingViewController.class]) {
+        [(UIViewController *)responder dismissViewControllerAnimated:YES completion:nil];
+    }
 }
 
 - (void)makeKeyAndVisible {
     %orig;
+    [self dyyy_installSettingsDoubleTapGesture];
 
     if (!isFloatSpeedButtonEnabled)
         return;
@@ -1476,7 +1525,6 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
 
 - (void)setAlpha:(CGFloat)alpha {
     BOOL showScheduleDisplay = DYYYGetBool(@"DYYYShowScheduleDisplay");
-    BOOL hideVideoProgress = DYYYGetBool(@"DYYYHideVideoProgress");
     CGFloat requestedAlpha = alpha;
 
     if (!showScheduleDisplay) {
@@ -1486,19 +1534,12 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
         return;
     }
 
-    if (hideVideoProgress) {
-        %orig(0.0f);
-        if (!self.hidden) {
-            self.hidden = YES;
-        }
-    } else {
-        %orig(1.0f);
-        if (self.hidden) {
-            self.hidden = NO;
-        }
+    %orig(1.0f);
+    if (self.hidden) {
+        self.hidden = NO;
     }
 
-    BOOL allowInteraction = !hideVideoProgress && requestedAlpha > 0.05f;
+    BOOL allowInteraction = requestedAlpha > 0.05f;
     DYYYUpdateProgressOverlayInteractivity(self, allowInteraction);
 }
 
@@ -1532,73 +1573,41 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
         }
     }
 
-    NSString *scheduleStyle = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYScheduleStyle"];
-    BOOL showRemainingTime = [scheduleStyle isEqualToString:@"进度条右侧剩余"];
-    BOOL showCompleteTime = [scheduleStyle isEqualToString:@"进度条右侧完整"];
-    BOOL showLeftRemainingTime = [scheduleStyle isEqualToString:@"进度条左侧剩余"];
-    BOOL showLeftCompleteTime = [scheduleStyle isEqualToString:@"进度条左侧完整"];
-
+    // Retain the default elapsed/total labels; the style preference is retired.
     NSString *labelColorHex = nil;
-
     CGFloat labelYPosition = sliderOriginalFrameInParent.origin.y + verticalOffset;
     CGFloat labelHeight = 15.0;
     UIFont *labelFont = [UIFont systemFontOfSize:8];
 
-    BOOL shouldShowLeftLabel = !showRemainingTime && !showCompleteTime;
-    BOOL shouldShowRightLabel = !showLeftRemainingTime && !showLeftCompleteTime;
-
-    if (shouldShowLeftLabel) {
-        UILabel *leftLabel = DYYYEnsureProgressLabel(self, YES, labelFont);
-        if (leftLabel) {
-            NSString *placeholderText = showLeftCompleteTime ? [NSString stringWithFormat:@"00:00/%@", safeDurationString] : @"00:00";
-            NSString *existingLeftText = leftLabel.text ?: @"";
-            BOOL leftTextChanged = ![existingLeftText isEqualToString:placeholderText];
-            if (leftTextChanged) {
-                leftLabel.text = placeholderText;
-                [leftLabel sizeToFit];
-            }
-
-            CGRect leftFrame = leftLabel.frame;
-            leftFrame.origin.x = sliderFrame.origin.x;
-            leftFrame.origin.y = labelYPosition;
-            leftFrame.size.height = labelHeight;
-            leftLabel.frame = leftFrame;
-
-            DYYYApplyProgressLabelColorIfNeeded(leftLabel, labelColorHex, leftTextChanged);
+    UILabel *leftLabel = DYYYEnsureProgressLabel(self, YES, labelFont);
+    if (leftLabel) {
+        NSString *placeholderText = @"00:00";
+        BOOL leftTextChanged = ![(leftLabel.text ?: @"") isEqualToString:placeholderText];
+        if (leftTextChanged) {
+            leftLabel.text = placeholderText;
+            [leftLabel sizeToFit];
         }
-    } else {
-        DYYYRemoveProgressLabel(self, YES);
+        CGRect leftFrame = leftLabel.frame;
+        leftFrame.origin.x = sliderFrame.origin.x;
+        leftFrame.origin.y = labelYPosition;
+        leftFrame.size.height = labelHeight;
+        leftLabel.frame = leftFrame;
+        DYYYApplyProgressLabelColorIfNeeded(leftLabel, labelColorHex, leftTextChanged);
     }
 
-    if (shouldShowRightLabel) {
-        UILabel *rightLabel = DYYYEnsureProgressLabel(self, NO, labelFont);
-        if (rightLabel) {
-            NSString *placeholderText;
-            if (showRemainingTime) {
-                placeholderText = @"00:00";
-            } else if (showCompleteTime) {
-                placeholderText = [NSString stringWithFormat:@"00:00/%@", safeDurationString];
-            } else {
-                placeholderText = safeDurationString;
-            }
-
-            NSString *existingRightText = rightLabel.text ?: @"";
-            BOOL rightTextChanged = ![existingRightText isEqualToString:placeholderText];
-            if (rightTextChanged) {
-                rightLabel.text = placeholderText;
-                [rightLabel sizeToFit];
-            }
-
-            CGRect rightFrame = rightLabel.frame;
-            rightFrame.origin.x = sliderFrame.origin.x + sliderFrame.size.width - CGRectGetWidth(rightFrame);
-            rightFrame.origin.y = labelYPosition;
-            rightFrame.size.height = labelHeight;
-            rightLabel.frame = rightFrame;
-
-            DYYYApplyProgressLabelColorIfNeeded(rightLabel, labelColorHex, rightTextChanged);
+    UILabel *rightLabel = DYYYEnsureProgressLabel(self, NO, labelFont);
+    if (rightLabel) {
+        BOOL rightTextChanged = ![(rightLabel.text ?: @"") isEqualToString:safeDurationString];
+        if (rightTextChanged) {
+            rightLabel.text = safeDurationString;
+            [rightLabel sizeToFit];
         }
-    } else {
-        DYYYRemoveProgressLabel(self, NO);
+        CGRect rightFrame = rightLabel.frame;
+        rightFrame.origin.x = sliderFrame.origin.x + sliderFrame.size.width - CGRectGetWidth(rightFrame);
+        rightFrame.origin.y = labelYPosition;
+        rightFrame.size.height = labelHeight;
+        rightLabel.frame = rightFrame;
+        DYYYApplyProgressLabelColorIfNeeded(rightLabel, labelColorHex, rightTextChanged);
     }
 
     [self setNeedsLayout];
@@ -1671,27 +1680,12 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
 
         NSString *labelColorHex = nil;
 
-        NSString *scheduleStyle = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYScheduleStyle"];
-        BOOL showRemainingTime = [scheduleStyle isEqualToString:@"进度条右侧剩余"];
-        BOOL showCompleteTime = [scheduleStyle isEqualToString:@"进度条右侧完整"];
-        BOOL showLeftRemainingTime = [scheduleStyle isEqualToString:@"进度条左侧剩余"];
-        BOOL showLeftCompleteTime = [scheduleStyle isEqualToString:@"进度条左侧完整"];
         CGRect sliderFrame = progressSlider.frame;
         CGFloat labelHeight = 15.0f;
 
         // 更新左标签
         if (arg1 >= 0 && leftLabel) {
-            NSString *newLeftText = @"";
-            if (showLeftRemainingTime) {
-                CGFloat remainingTime = arg2 - arg1;
-                if (remainingTime < 0)
-                    remainingTime = 0;
-                newLeftText = [self formatTimeFromSeconds:remainingTime];
-            } else if (showLeftCompleteTime) {
-                newLeftText = [NSString stringWithFormat:@"%@/%@", [self formatTimeFromSeconds:arg1], [self formatTimeFromSeconds:arg2]];
-            } else {
-                newLeftText = [self formatTimeFromSeconds:arg1];
-            }
+            NSString *newLeftText = [self formatTimeFromSeconds:arg1];
 
             NSString *existingLeftText = leftLabel.text ?: @"";
             BOOL leftTextChanged = ![existingLeftText isEqualToString:newLeftText];
@@ -1709,17 +1703,7 @@ static inline void DYYYApplyProgressLabelColorIfNeeded(UILabel *label, NSString 
 
         // 更新右标签
         if (arg2 > 0 && rightLabel) {
-            NSString *newRightText = @"";
-            if (showRemainingTime) {
-                CGFloat remainingTime = arg2 - arg1;
-                if (remainingTime < 0)
-                    remainingTime = 0;
-                newRightText = [self formatTimeFromSeconds:remainingTime];
-            } else if (showCompleteTime) {
-                newRightText = [NSString stringWithFormat:@"%@/%@", [self formatTimeFromSeconds:arg1], [self formatTimeFromSeconds:arg2]];
-            } else {
-                newRightText = [self formatTimeFromSeconds:arg2];
-            }
+            NSString *newRightText = [self formatTimeFromSeconds:arg2];
 
             NSString *existingRightText = rightLabel.text ?: @"";
             BOOL rightTextChanged = ![existingRightText isEqualToString:newRightText];
@@ -2499,6 +2483,9 @@ static NSArray<NSString *> *dyyy_qualityRank = nil;
         BOOL isDarkMode = [DYYYUtils isDarkMode];
         return isDarkMode ? 1 : 2;
     }
+    // Single-option combinations previously fell through without a return.
+    // Preserve the host's style until the private enum is verified on iPad.
+    return %orig;
 }
 %end
 
@@ -2517,6 +2504,9 @@ static NSArray<NSString *> *dyyy_qualityRank = nil;
         BOOL isDarkMode = [DYYYUtils isDarkMode];
         return isDarkMode ? 1 : 2;
     }
+    // Single-option combinations previously fell through without a return.
+    // Preserve the host's style until the private enum is verified on iPad.
+    return %orig;
 }
 %end
 
@@ -5142,7 +5132,6 @@ static NSHashTable *processedParentViews = nil;
     BOOL shouldFilterLowLikes = NO;
     BOOL shouldFilterKeywords = NO;
     BOOL shouldFilterProp = NO;
-    BOOL shouldFilterTime = NO;
     BOOL shouldFilterUser = NO;
 
     // 获取用户设置的需要过滤的关键词
@@ -5229,18 +5218,7 @@ static NSHashTable *processedParentViews = nil;
             }
         }
 
-        // 过滤视频发布时间
-        long long currentTimestamp = (long long)[[NSDate date] timeIntervalSince1970];
-        NSInteger daysThreshold = DYYYGetInteger(@"DYYYFilterTimeLimit");
-        if (daysThreshold > 0) {
-            NSTimeInterval videoTimestamp = [self.createTime doubleValue];
-            if (videoTimestamp > 0) {
-                NSTimeInterval threshold = daysThreshold * 86400.0;
-                NSTimeInterval current = (NSTimeInterval)currentTimestamp;
-                NSTimeInterval timeDifference = current - videoTimestamp;
-                shouldFilterTime = (timeDifference > threshold);
-            }
-        }
+
     }
 
     // 检查是否为HDR视频
@@ -5257,7 +5235,7 @@ static NSHashTable *processedParentViews = nil;
         }
     }
     return shouldFilterAds || shouldFilterRecLive || shouldFilterAllLive || shouldFilterHotSpot || shouldskipPhoto || shouldskipPhotoText || shouldFilterHDR || shouldFilterLowLikes || shouldFilterKeywords || shouldFilterProp ||
-           shouldFilterTime || shouldFilterUser;
+           shouldFilterUser;
 }
 
 - (AWEECommerceLabel *)ecommerceBelowLabel {

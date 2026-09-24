@@ -55,7 +55,7 @@
           @"dependencies" : @{
               // 普通依赖：当源设置开启时，目标设置项可用
               @"DYYYEnableArea" : @[ @"DYYYGeonamesUsername", @"DYYYAwemeXTimestampGradient" ],
-              @"DYYYShowScheduleDisplay" : @[ @"DYYYScheduleStyle", @"DYYYTimelineVerticalPosition" ],
+              @"DYYYShowScheduleDisplay" : @[ @"DYYYTimelineVerticalPosition" ],
               @"DYYYEnableNotificationTransparency" : @[ @"DYYYNotificationCornerRadius" ],
               @"DYYYEnableFloatSpeedButton" : @[ @"DYYYAutoRestoreSpeed", @"DYYYSpeedButtonShowX", @"DYYYSpeedButtonSize", @"DYYYSpeedSettings" ],
               @"DYYYEnableFloatClearButton" : @[

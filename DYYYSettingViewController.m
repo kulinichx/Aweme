@@ -167,14 +167,11 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
             [DYYYSettingItem itemWithTitle:@"设置长按倍速" key:@"DYYYLongPressSpeed" type:DYYYSettingItemTypePicker],
             [DYYYSettingItem itemWithTitle:@"上下控制倍速" key:@"DYYYEnableLongPressSpeedGesture" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"显示进度时长" key:@"DYYYShowScheduleDisplay" type:DYYYSettingItemTypeSwitch],
-            [DYYYSettingItem itemWithTitle:@"进度时长样式" key:@"DYYYScheduleStyle" type:DYYYSettingItemTypeTextField placeholder:@"默认"],
             [DYYYSettingItem itemWithTitle:@"进度纵轴位置" key:@"DYYYTimelineVerticalPosition" type:DYYYSettingItemTypeTextField placeholder:@"-12.5"],
-            [DYYYSettingItem itemWithTitle:@"隐藏视频进度" key:@"DYYYHideVideoProgress" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"启用自动播放" key:@"DYYYEnableAutoPlay" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"推荐过滤直播" key:@"DYYYSkipLive" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"推荐过滤热点" key:@"DYYYSkipHotSpot" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"推荐过滤低赞" key:@"DYYYFilterLowLikes" type:DYYYSettingItemTypeTextField placeholder:@"填0关闭"],
-            [DYYYSettingItem itemWithTitle:@"推荐视频时限" key:@"DYYYFilterTimeLimit" type:DYYYSettingItemTypeTextField placeholder:@"填0关闭，单位为天"],
             [DYYYSettingItem itemWithTitle:@"推荐过滤HDR" key:@"DYYYFilterFeedHDR" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"启用首页净化" key:@"DYYYEnablePure" type:DYYYSettingItemTypeSwitch],
             [DYYYSettingItem itemWithTitle:@"启用首页全屏" key:@"DYYYEnableFullScreen" type:DYYYSettingItemTypeSwitch],
@@ -711,14 +708,29 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
 }
 
 - (void)toggleSection:(UIButton *)sender {
+    if (self.isSearching || sender.tag < 0 || (NSUInteger)sender.tag >= self.settingSections.count) {
+        return;
+    }
+    // Commit an active text field before its section is collapsed.
+    [self.view endEditing:YES];
     NSNumber *section = @(sender.tag);
-    if ([self.expandedSections containsObject:section]) {
-        [self.expandedSections removeObject:section];
-    } else {
+    BOOL wasExpanded = [self.expandedSections containsObject:section];
+    NSMutableIndexSet *changedSections = [NSMutableIndexSet indexSetWithIndex:sender.tag];
+    for (NSNumber *previousSection in self.expandedSections) {
+        if (previousSection.unsignedIntegerValue < self.settingSections.count) {
+            [changedSections addIndex:previousSection.unsignedIntegerValue];
+        }
+    }
+    [self.expandedSections removeAllObjects];
+    if (!wasExpanded) {
         [self.expandedSections addObject:section];
     }
-
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:sender.tag] withRowAnimation:UITableViewRowAnimationFade];
+    // Refresh both old and new headers/rows; no preference values are changed.
+    [self.tableView reloadSections:changedSections withRowAnimation:UITableViewRowAnimationNone];
+    [self.tableView layoutIfNeeded];
+    if (!wasExpanded) {
+        [self.tableView scrollRectToVisible:[self.tableView rectForHeaderInSection:sender.tag] animated:NO];
+    }
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -872,25 +884,7 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
 }
 
 - (void)headerTapped:(UIButton *)sender {
-    if (self.isSearching) {
-        return;
-    }
-    NSNumber *section = @(sender.tag);
-    if ([self.expandedSections containsObject:section]) {
-        [self.expandedSections removeObject:section];
-    } else {
-        [self.expandedSections addObject:section];
-    }
-
-    UIView *headerView = [self.tableView headerViewForSection:sender.tag];
-    UIImageView *arrowImageView = [headerView viewWithTag:100];
-
-    [UIView animateWithDuration:0.3
-                     animations:^{
-                       arrowImageView.image = [UIImage systemImageNamed:[self.expandedSections containsObject:section] ? @"chevron.down" : @"chevron.right"];
-                     }];
-
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:sender.tag] withRowAnimation:UITableViewRowAnimationFade];
+    [self toggleSection:sender];
 }
 
 @end
