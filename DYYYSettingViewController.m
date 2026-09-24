@@ -36,7 +36,7 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
 
 @end
 
-@interface DYYYSettingViewController () <UITableViewDelegate, UITableViewDataSource>
+@interface DYYYSettingViewController () <UITableViewDelegate, UITableViewDataSource, UISearchBarDelegate>
 
 @property(nonatomic, strong) UITableView *tableView;
 @property(nonatomic, strong) NSArray<NSArray<DYYYSettingItem *> *> *settingSections;
@@ -47,6 +47,12 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
 @property(nonatomic, strong) UIVisualEffectView *vibrancyEffectView;
 @property(nonatomic, assign) BOOL isAgreementShown;
 @property(nonatomic, strong) CAGradientLayer *titleGradientLayer;
+// Settings search: settingSections/sectionTitles always hold what is displayed (all or filtered),
+// so every index-path/tag based handler keeps resolving the correct item.
+@property(nonatomic, strong) NSArray<NSArray<DYYYSettingItem *> *> *allSettingSections;
+@property(nonatomic, copy) NSArray<NSString *> *allSectionTitles;
+@property(nonatomic, strong) UISearchBar *searchBar;
+@property(nonatomic, assign) BOOL isSearching;
 
 @end
 
@@ -65,6 +71,7 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
     [self setupDefaultValues];
     [self setupSettingItems];
     [self setupSectionTitles];
+    [self setupSearchBar];
     [self setupFooterLabel];
     [self addTitleGradientAnimation];
 }
@@ -420,6 +427,88 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
     self.sectionTitles = [@[ @"基本设置", @"界面设置", @"隐藏设置", @"顶栏移除", @"隐藏面板", @"面板设置", @"功能设置", @"悬浮按钮" ] mutableCopy];
 }
 
+#pragma mark - Settings Search
+
+- (void)setupSearchBar {
+    self.allSettingSections = self.settingSections;
+    self.allSectionTitles = [self.sectionTitles copy];
+
+    UISearchBar *searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 56)];
+    searchBar.delegate = self;
+    searchBar.placeholder = @"搜索设置";
+    searchBar.searchBarStyle = UISearchBarStyleMinimal;
+    searchBar.barStyle = UIBarStyleBlack;
+    searchBar.keyboardAppearance = UIKeyboardAppearanceDark;
+    searchBar.autocorrectionType = UITextAutocorrectionTypeNo;
+    searchBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    searchBar.returnKeyType = UIReturnKeyDone;
+    searchBar.tintColor = [UIColor whiteColor];
+    searchBar.searchTextField.textColor = [UIColor whiteColor];
+    searchBar.searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"搜索设置"
+                                                                                          attributes:@{NSForegroundColorAttributeName : [UIColor lightGrayColor]}];
+    [searchBar sizeToFit];
+    self.searchBar = searchBar;
+    self.tableView.tableHeaderView = searchBar;
+    self.tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+}
+
+- (void)applySearchText:(NSString *)rawText {
+    NSString *query = [rawText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (query.length == 0) {
+        // Clearing restores the full list; expandedSections was never touched while searching.
+        self.isSearching = NO;
+        self.settingSections = self.allSettingSections;
+        self.sectionTitles = [self.allSectionTitles mutableCopy];
+        [self.tableView reloadData];
+        return;
+    }
+
+    NSStringCompareOptions options = NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch;
+    NSMutableArray *sections = [NSMutableArray array];
+    NSMutableArray *titles = [NSMutableArray array];
+    [self.allSettingSections enumerateObjectsUsingBlock:^(NSArray<DYYYSettingItem *> *items, NSUInteger idx, BOOL *stop) {
+      NSString *sectionTitle = idx < self.allSectionTitles.count ? self.allSectionTitles[idx] : @"";
+      NSMutableArray *matched = [NSMutableArray array];
+      for (DYYYSettingItem *item in items) {
+          if ([item.title rangeOfString:query options:options].location != NSNotFound ||
+              [item.key rangeOfString:query options:options].location != NSNotFound) {
+              [matched addObject:item];
+          }
+      }
+      if (matched.count > 0) {
+          [sections addObject:[matched copy]];
+          [titles addObject:[NSString stringWithFormat:@"%@（%lu）", sectionTitle, (unsigned long)matched.count]];
+      }
+    }];
+
+    self.isSearching = YES;
+    self.settingSections = [sections copy];
+    self.sectionTitles = titles;
+    [self.tableView reloadData];
+}
+
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
+    [self applySearchText:searchText];
+}
+
+- (void)searchBarTextDidBeginEditing:(UISearchBar *)searchBar {
+    [searchBar setShowsCancelButton:YES animated:YES];
+}
+
+- (void)searchBarTextDidEndEditing:(UISearchBar *)searchBar {
+    [searchBar setShowsCancelButton:NO animated:YES];
+}
+
+- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
+    [searchBar resignFirstResponder];
+}
+
+- (void)searchBarCancelButtonClicked:(UISearchBar *)searchBar {
+    searchBar.text = @"";
+    [searchBar resignFirstResponder];
+    [self applySearchText:@""];
+}
+
 - (void)setupFooterLabel {
     self.footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 50)];
     self.footerLabel.text = [NSString stringWithFormat:@"Developer By @huamidev\nVersion: %@ (%@)", DYYY_VERSION, @"260104"];
@@ -594,7 +683,7 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
     [headerView addSubview:titleLabel];
 
     UIImageView *arrowImageView = [[UIImageView alloc] initWithFrame:CGRectMake(titleLabel.frame.origin.x + titleLabel.frame.size.width - 30, 15, 14, 14)];
-    arrowImageView.image = [UIImage systemImageNamed:[self.expandedSections containsObject:@(section)] ? @"chevron.down" : @"chevron.right"];
+    arrowImageView.image = [UIImage systemImageNamed:(self.isSearching || [self.expandedSections containsObject:@(section)]) ? @"chevron.down" : @"chevron.right"];
     arrowImageView.tintColor = [UIColor lightGrayColor];
     arrowImageView.tag = 100;
     arrowImageView.contentMode = UIViewContentModeScaleAspectFit;
@@ -614,6 +703,10 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (self.isSearching) {
+        // Search results ignore collapsed state.
+        return self.settingSections[section].count;
+    }
     return [self.expandedSections containsObject:@(section)] ? self.settingSections[section].count : 0;
 }
 
@@ -779,6 +872,9 @@ typedef NS_ENUM(NSInteger, DYYYSettingItemType) { DYYYSettingItemTypeSwitch, DYY
 }
 
 - (void)headerTapped:(UIButton *)sender {
+    if (self.isSearching) {
+        return;
+    }
     NSNumber *section = @(sender.tag);
     if ([self.expandedSections containsObject:section]) {
         [self.expandedSections removeObject:section];
